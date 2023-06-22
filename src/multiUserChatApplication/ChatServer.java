@@ -1,8 +1,16 @@
-package multiUserChatApplication;
+
+
+import org.pgpainless.sop.SOPImpl;
+import sop.DecryptionResult;
+import sop.ReadyWithResult;
+import sop.SOP;
 
 import java.io.*;
-import java.net.*;
+import java.net.BindException;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 
 // chat server for interaction with multiple clients through a tcp socket connection.
@@ -35,6 +43,7 @@ public class ChatServer
 		@Override
 		public void run()
 		{
+
 			if (verbose)
 				System.out.println("client connected " + socket.getInetAddress());
 
@@ -43,14 +52,20 @@ public class ChatServer
 				in = new BufferedReader(
 						new InputStreamReader(socket.getInputStream()));
 				out = new PrintWriter(socket.getOutputStream(), true);
+				Scanner sc = new Scanner(System.in);
+				SOP sop = new SOPImpl();
+				User user = new User();
+				user.registrateUser(sc, sop);
 
 				// SUBMITNAME request loop
 				// Continually request a screen name for the client until valid,
 				// then add to map of clients
 				while (true)
 				{
-					out.println("SUBMITNAME");
-					name = in.readLine();
+					//out.println("SUBMITNAME");
+					//name = in.readLine();
+					name = user.getUserId();
+
 
 					if (name == null)
 					{
@@ -77,25 +92,46 @@ public class ChatServer
 				if (verbose)
 					System.out.println(name + " has joined");
 				broadcastMessage(name + " has joined");
-				connectedClients.put(name, out);
+				//connectedClients.put(name, out);
+				connectedClients.put(user, out);
 
 				// SENDMESSAGE request sent to client to begin receiving chat
 				// input
 				// while the client is connected, server will listen to input
 				// stream
 				// to receive messages and broadcast to all clients in map
-				String message;
+				byte[] message;
 				out.println("STARTCHAT");
-				while ((message = in.readLine()) != null)
+				while ((message = in.readLine().getBytes()) != null)
 				{
-					if (!(message.isEmpty()))
+					//if (!(message.isEmpty()))
+					if (!(message != null && message.length > 0))
 					{
-						if (message.toLowerCase().equals("/quit"))
+						if (message.toString().toLowerCase().equals("/quit"))
 						{
 							break;
 						}
+						for (Map.Entry<User, PrintWriter> entry : connectedClients.entrySet()) {
+							byte[] ciphertext = sop.encrypt()          //REIKIA ENCRYPTINT IR PASKUI KAZKAIP RECEIVERIAM DECRPYTINT
+									// encrypt for each recipient
+									.withCert(user.getCertId())
+									.withCert(entry.getKey().getCertId())
+									//.signWith(user1.getKeyId())
+									//.withKeyPassword(user.getPassword()) // if signing key is protected
+									// provide the plaintext
+									.plaintext(message)
+									.getBytes();
+							ReadyWithResult<DecryptionResult> readyWithResult = sop.decrypt()
+									.withKey(entry.getKey().getKeyId())
+									.verifyWithCert(user.getCertId())
+									.withKeyPassword(user.getPassword()) // if decryption key is protected
+									.ciphertext(ciphertext);
+							OutputStream out = System.out;
+							DecryptionResult bytesAndResult = readyWithResult.writeTo(out);
 
-						broadcastMessage(name + ": " + message);
+						}
+							broadcastMessage(name + ": " + message );
+
 					}
 				}
 
@@ -128,7 +164,8 @@ public class ChatServer
 //----------------------
 
 	// Map of clients connected to the server
-	private static HashMap<String, PrintWriter> connectedClients = new HashMap<>();
+	//private static HashMap<String, PrintWriter> connectedClients = new HashMap<>();
+	private static HashMap<User, PrintWriter> connectedClients = new HashMap<>();
 
 	// Set maximum amount of connected clients
 	private static final int MAX_CONNECTED = 50;
