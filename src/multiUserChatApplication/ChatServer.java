@@ -5,7 +5,10 @@ import sop.DecryptionResult;
 import sop.ReadyWithResult;
 import sop.SOP;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -57,13 +60,12 @@ public class ChatServer
 				User user = new User();
 				user.registrateUser(sc, sop);
 
-				// SUBMITNAME request loop
+				// name request loop
 				// Continually request a screen name for the client until valid,
 				// then add to map of clients
 				while (true)
 				{
-					//out.println("SUBMITNAME");
-					//name = in.readLine();
+
 					name = user.getUserId();
 
 
@@ -112,25 +114,14 @@ public class ChatServer
 							break;
 						}
 						for (Map.Entry<User, PrintWriter> entry : connectedClients.entrySet()) {
-							byte[] ciphertext = sop.encrypt()          //REIKIA ENCRYPTINT IR PASKUI KAZKAIP RECEIVERIAM DECRPYTINT
-									// encrypt for each recipient
+							byte[] ciphertext = sop.encrypt()
 									.withCert(user.getCertId())
 									.withCert(entry.getKey().getCertId())
-									//.signWith(user1.getKeyId())
-									//.withKeyPassword(user.getPassword()) // if signing key is protected
-									// provide the plaintext
 									.plaintext(message)
 									.getBytes();
-							ReadyWithResult<DecryptionResult> readyWithResult = sop.decrypt()
-									.withKey(entry.getKey().getKeyId())
-									.verifyWithCert(user.getCertId())
-									.withKeyPassword(user.getPassword()) // if decryption key is protected
-									.ciphertext(ciphertext);
-							OutputStream out = System.out;
-							DecryptionResult bytesAndResult = readyWithResult.writeTo(out);
 
 						}
-							broadcastMessage(name + ": " + message );
+							broadcastMessage(name + ": " + ciphertext); //THIS SHOULD GET THE CIPHERTEXT
 
 					}
 				}
@@ -163,8 +154,7 @@ public class ChatServer
 	}
 //----------------------
 
-	// Map of clients connected to the server
-	//private static HashMap<String, PrintWriter> connectedClients = new HashMap<>();
+
 	private static HashMap<User, PrintWriter> connectedClients = new HashMap<>();
 
 	// Set maximum amount of connected clients
@@ -177,11 +167,21 @@ public class ChatServer
 	private static ServerSocket listener;
 
 	// Broadcast to all clients in map by writing to their output streams
-	private static void broadcastMessage(String message)
-	{
-		for (PrintWriter p : connectedClients.values())
-		{
-			p.println(message);
+	private static void broadcastMessage(String message) throws IOException {
+		SOP sop = new SOPImpl();
+
+		for (Map.Entry<User, PrintWriter> entry : connectedClients.entrySet()) {
+			ReadyWithResult<DecryptionResult> decryptedText = sop.decrypt()
+					.withKey(entry.getKey().getKeyId())
+					.verifyWithCert(user.getCertId()) //NEED TO GET A USER WHICH SENDS THE MESSAGE
+					.withKeyPassword(user.getPassword())
+					.ciphertext(message.getBytes());
+
+			for (PrintWriter p : connectedClients.values())
+
+			{
+				p.println(decryptedText);
+			}
 		}
 	}
 
